@@ -1725,6 +1725,47 @@ impl<'a> EventDb<'a> {
         }
         Ok(())
     }
+
+    #[must_use]
+    pub fn get_old(&self, timestamp_nanos: i64) -> Vec<i128> {
+        let threshold_key = i128::from(timestamp_nanos) << 64;
+        let mut keys_to_delete = Vec::new();
+        let mut iter = self.iter_forward();
+
+        while let Some(Ok((key, _))) = iter.next() {
+            if key < threshold_key {
+                keys_to_delete.push(key);
+            } else {
+                break;
+            }
+        }
+
+        keys_to_delete
+    }
+
+    /// Delete event data older than the timestamp
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if event fails to delete
+    pub fn delete_old(&self, old_keys: &[i128]) -> Result<()> {
+        loop {
+            let txn = self.inner.transaction();
+            for key in old_keys {
+                txn.delete(key.to_be_bytes())
+                    .context("failed to delete entry")?;
+            }
+            match txn.commit() {
+                Ok(()) => break,
+                Err(e) => {
+                    if !e.as_ref().starts_with("Resource busy:") {
+                        return Err(e).context("failed to delete old data");
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 #[allow(clippy::module_name_repetitions)]
@@ -2223,7 +2264,6 @@ mod tests {
         event::DgaFields, event::DnsEventFields, DomainGenerationAlgorithm, EventKind,
         EventMessage, Store,
     };
-    use bincode::Options;
     use chrono::{TimeZone, Utc};
     use std::{
         net::{IpAddr, Ipv4Addr},
@@ -2231,7 +2271,6 @@ mod tests {
     };
 
     fn example_message() -> EventMessage {
-        let codec = bincode::DefaultOptions::new();
         let fields = DnsEventFields {
             source: "collector1".to_string(),
             session_end_time: Utc::now(),
@@ -2257,7 +2296,7 @@ mod tests {
         EventMessage {
             time: Utc::now(),
             kind: EventKind::DnsCovertChannel,
-            fields: codec.serialize(&fields).expect("serializable"),
+            fields: bincode::serialize(&fields).expect("serializable"),
         }
     }
 
@@ -2404,5 +2443,43 @@ mod tests {
         let info = backup.get_backup_info();
         assert_eq!(info.len(), 1);
         assert_eq!(info[0].backup_id, 1);
+    }
+
+    #[tokio::test]
+    async fn get_and_delete_old() {
+        use tokio::sync::RwLock;
+
+        let db_dir = tempfile::tempdir().unwrap();
+        let backup_dir = tempfile::tempdir().unwrap();
+
+        let store = Arc::new(RwLock::new(
+            Store::new(db_dir.path(), backup_dir.path()).unwrap(),
+        ));
+        {
+            let store = store.read().await;
+            let db = store.events();
+            assert!(db.iter_forward().next().is_none());
+
+            let msg = example_message();
+
+            db.put(&msg).unwrap();
+            {
+                let mut iter = db.iter_forward();
+                assert!(iter.next().is_some());
+                assert!(iter.next().is_none());
+            }
+        }
+
+        {
+            let store = store.read().await;
+            let db = store.events();
+            let old_keys = db.get_old(Utc::now().timestamp_nanos_opt().unwrap());
+
+            assert_eq!(old_keys.len(), 1);
+
+            let res = db.delete_old(&old_keys);
+
+            assert!(res.is_ok());
+        }
     }
 }

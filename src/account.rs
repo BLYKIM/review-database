@@ -288,7 +288,7 @@ mod tests {
     }
 
     #[test]
-    fn account_passowrd_update() {
+    fn account_password_update() {
         let mut account = Account {
             username: "test".to_string(),
             password: SaltedPassword::new_with_hash_algorithm(

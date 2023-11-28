@@ -84,7 +84,7 @@ impl Model {
     /// # Errors
     ///
     /// Returns an error if format version doesn't match `MagicHeader::FORMAT_VERSION` or
-    /// if deserialization process failed.  
+    /// if deserialization process failed.
     pub fn from_serialized(serialized: &[u8]) -> Result<Self> {
         use anyhow::anyhow;
 
@@ -116,7 +116,7 @@ impl Model {
 
     /// # Errors
     ///
-    /// Returns an error if serialization process failed.  
+    /// Returns an error if serialization process failed.
     pub fn into_serialized(self) -> Result<Vec<u8>> {
         let mut buf = <Vec<u8>>::from(self.header()?);
         let model = Body {

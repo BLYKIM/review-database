@@ -1,3 +1,4 @@
+mod delete;
 mod load;
 mod round;
 mod save;

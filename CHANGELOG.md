@@ -23,6 +23,11 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   statistics. This information is valuable for tracking changes over time and
   aligning statistical insights with specific data batches.
 
+### Added
+
+- Added retain function to `schedule_periodic`. it deletes events data and statistics
+  older than each retention period.
+
 ### Changed
 
 - Removed `batch_info` and `scores` arguments from `Model::from_storage` function.
